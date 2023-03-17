@@ -33,7 +33,7 @@ int createServerSock(){
     return sockfd;
 }
 
-int createClientSock(){
+int createClientSock(char name){
     int sockfd;
     struct sockaddr_in cli_addr;
 
@@ -44,7 +44,7 @@ int createClientSock(){
 
     memset(&cli_addr, '0', sizeof(cli_addr));
 
-    if ((host = gethostbyname(argv[1])) == NULL) { //get host name for client
+    if ((host = gethostbyname(name)) == NULL) { //get host name for client
       perror("Sender: Client-gethostbyname() error lol!");
       exit(1);
       }
@@ -63,27 +63,21 @@ int createClientSock(){
     return sockfd;
 }
 
-void *connection_handler(void *client_socket){ //handler to deal with client request
+void *connection_handler(void *client_socket, char option){ //handler to deal with client request
     int read_size;
     char type,tittle,content;
     while((read_size = recv(&client_socket, client_message, 2000, 0)) > 0)
     {   //break down the message into different parts
         int j = sprintf_s(client_message, sizeof(client_message), "%s,%s,%s",type,tittle,content);
         printf("Client[%d]: %s", &client_socket, client_message);
-        if(type=="Post"){//write operation two case one for primary and another for reguler server
-
+        if(option=="primary_backup"){
+            primary(type,tittle,content);
         }
-        else if(type=="Read"){//read operation
-
+        else if(option=="quorum"){
+            quorum(type,tittle,content);
         }
-        else if(type=="Choose"){//read operation
-
-        }
-        else if(type=="Reply"){//wrtie operation
-
-        }
-        else{
-
+        else if(option=="local_write"){
+            local_write(type,tittle,content);
         }
         client_message[read_size] = '\0';
         write(sock, message_to_client, strlen(message_to_client));
@@ -91,12 +85,14 @@ void *connection_handler(void *client_socket){ //handler to deal with client req
     }
 }
 
-int main{
+int main(int argc, char *argv[]){
     int server_sock,client_sock,client_socket
     socklen_t size;
     pthread_t client_thread;
+    char option;
     
-    client_sock = createClientSock();
+    client_sock = createClientSock(argv[1]);
+    mechanism = argv[2];
     if(listen(client_sock,1) < 0){
         perror("Could not listen for connections\n");
         exit(0);
@@ -108,18 +104,26 @@ int main{
             {
                 perror("Could not listen for connections\n");
                 exit(0);}
-                }
-        while(1){
+            }
+    }
+    else{
+        server_sock = createServerSock();
+        if(listen(sock,1) < 0) 
+            {
+                perror("Could not listen for connections\n");
+                exit(0);
+            }
+    }
+    while(1){
             while(( client_socket = accept(client_sock, (struct sockaddr *)&clientName, (socklen_t *)&size))){
                 printf("A Client connected!\n");
-                if( pthread_create( &client_thread, NULL, connection_handler, (void*) &client_socket) < 0)
+                if( pthread_create( &client_thread, NULL, connection_handler, (void*) &client_socket, option) < 0)
                         {
                             perror("could not create thread");
                             return 1;
                         }
             }
         }
-    }
 }
 
 
