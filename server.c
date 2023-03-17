@@ -2,8 +2,8 @@
 
 
 
-// int server_sock = [5]
-// int client_sock = [5]
+int server_socks = [5]
+int client_socks = [5]
 struct log_entry logs = [10]
 bool is_primary;
 pthread_mutex_t log_lock = PTHREAD_MUTEX_INITIALIZER; 
@@ -100,7 +100,8 @@ int main(int argc, char *argv[]){
     if(is_primary){
         for (int i=0;i<5;i++){ // need connect to each server to get them sychronized
         server_sock = createServerSock();
-        if(listen(sock,1) < 0) 
+        server_socks[i]=server_sock;
+        if(listen(server_sock,1) < 0) 
             {
                 perror("Could not listen for connections\n");
                 exit(0);}
@@ -113,6 +114,7 @@ int main(int argc, char *argv[]){
                 perror("Could not listen for connections\n");
                 exit(0);
             }
+        server_socks[0]=server_sock;
     }
     while(1){
             while(( client_socket = accept(client_sock, (struct sockaddr *)&clientName, (socklen_t *)&size))){
