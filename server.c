@@ -1,13 +1,17 @@
 #include <server.h>
 
-
-char* articles[20];
+int time_length = 20;
+int times[time_length];
+int time_index=0;
 int server_socks = [5];
 int client_socks = [5];
 int log_read = 0;
 struct log_entry logs = [10];
 bool is_primary;
+int server_sock; //socket to connect primary
 pthread_mutex_t log_lock = PTHREAD_MUTEX_INITIALIZER;
+
+
 
 
 int createServerSock(){
@@ -148,32 +152,127 @@ int next_avaiable_index(void* array[]){ //find next empty spot in an array
 
 void reply (int timestamp, char* content, char* title){
     pthread_mutex_lock(&log_lock);
+    char reply_title[30];
     for(int i=0;i<10;i++){
         if (strcmp(title,logs[i].title)==0){    //for match title update its reply indexes and post it
             int next = next_avaiable_index(&logs[i].reply_indexes);
             logs[i].reply_indexes[next]=log_read;
-            post(timestamp,title,content);
+            sprintf(str,"A reply to Article %d",logs[i].title[0]); //timestamp might get changed only the first number is persistant
+            post(timestamp,"A reply to",content);
+            logs[i].timestamp = timestamp;//update timestamp of  the article you reply
         }
     }
     pthread_mutex_unlock(&log_lock);
+}
+// void *receiveMessage(int* socket)
+// {
+//     char buffer[1024];
+//     memset(buffer, 0, 1024);
+//     while (1){
+//         if (recvfrom(sockfd, buffer, 1024, 0, NULL, NULL) > 0){//primary send timestamp otherwise send logs[] or an array of timestamp?  buffer[0]then it is a timestamp else it is unmatched log entries
+//             if(buffer[1]==logs[log_read].timestamp){//already synchronized
+//                 is_primary=1;
+//                 send()//make primary not primary
+//             }
+//             else{
+//                 for(int i =0;i<log_read)
+//                 send()//send an array of timestamp
+                
+//                 break;
+//             }
+//         }
+//         memset(buffer, 0, 1024);
+//     }
+// }
+
+void *receiveMessage(int* socket)
+{
+    char buffer[1024];
+    memset(buffer, 0, 1024);
+    while (1){
+        if (recvfrom(sockfd, buffer, 1024, 0, NULL, NULL) > 0){//primary send timestamp otherwise send logs[] or an array of timestamp?
+            if(sizeof(buffer)==sizeof(logs)){//already synchronized
+                is_primary=1;
+                send()//make primary not primary
+                break;
+            }
+            else{
+                is_primary=1;
+                logs=buffer;
+                break;
+            }
+        }
+        memset(buffer, 0, 1024);
+    }
+}
+
+void* sendMessage(int* socket,char* message){
+    int written_num= write(*socket, message, strlen(message) + 1);
+    if(written_num<0){
+        perror("written failed\n");
+        exit(0);
+    }
+}
+
+void connect_primary(){//connect primary and synchronize logs
+    int server_socket;
+    socklen_t size;
+    while((server_socket = accept(server_sock, (struct sockaddr *)&serverName, (socklen_t *)&size))){
+        printf("primary server connected");
+        receiveMessage(&server_socket);
+    }
+}
+
+void broadcast(){
+    int sychronized=0;
+    while(!synchonized){
+
+    }
 }
 
 void local_write(char type,char title,char content){
     switch (type) {
         case "Post" :
-            break;
+            if(is_primary){
+                post(time_index++,title,content);
+            }
+            else{
+                connect_primary(); //synchonized with the primary
+                broadcast(); //get every server synchronized
+            }
         case "Reply":
-            break;
+            if(is_primary){
+                reply(time_index++,title,content);
+            }
+            else{
+
+            }
         case "Choose" :
+            if(is_primary){
+                //wait for a heartbeat/broadcast() time that goes back and forth to a primary
+                choose(title);
+            }
+            else{
+
+            }
             break;
         case "Read":
+            if(is_primary){
+                read(number);
+            }
+            else{
+                //wait for a check with primary
+            }
+        
+        
+
         
     }
 
 }
 
 int main(int argc, char *argv[]){
-    int server_sock,client_sock,client_socket
+    int client_sock,client_socket
     socklen_t size;
     pthread_t client_thread;
     char option;
