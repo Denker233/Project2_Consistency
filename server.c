@@ -1,12 +1,14 @@
 #include <server.h>
 
 
-
-int server_socks = [5]
-int client_socks = [5]
-struct log_entry logs = [10]
+char* articles[20];
+int server_socks = [5];
+int client_socks = [5];
+int log_read = 0;
+struct log_entry logs = [10];
 bool is_primary;
-pthread_mutex_t log_lock = PTHREAD_MUTEX_INITIALIZER; 
+pthread_mutex_t log_lock = PTHREAD_MUTEX_INITIALIZER;
+
 
 int createServerSock(){
     int sockfd;
@@ -83,6 +85,91 @@ void *connection_handler(void *client_socket, char option){ //handler to deal wi
         write(sock, message_to_client, strlen(message_to_client));
         memset(client_message, 0, 2000);
     }
+}
+
+void post(int timestamp,char title,char content){
+    pthread_mutex_lock(&log_lock);
+    logs[log_read].timestamp=timestamp;
+    logs[log_read].title = title;
+    logs[log_read].content= content;
+    log_read++;
+    pthread_mutex_unlock(&log_lock);
+}
+
+void print_reply(int index,int loop){//recursively print every reply
+    while(loop>0){
+        printf("    ");
+        loop--;
+    }
+    printf("%s\n",logs[i].title);
+    if(logs[index].reply_indexes){
+        int i=0;
+        while(logs[index].reply_indexes[i]){
+            print_reply(reply_indexes[i],loop+1);
+            i++;
+        }
+    }
+    else{
+        return;
+    }
+
+}
+
+void read(int number){
+    pthread_mutex_lock(&log_lock);
+    for(int i,j=0;i<number;i++){
+        printf("%s\n",logs[i].title);
+        if(logs[i].type){// for non-reply print title and its replies
+            printf("%s\n",logs[i].title);
+            print_reply(logs[i].reply_indexes[0],)
+        }
+    }
+    pthread_mutex_lock(&log_lock);
+}
+
+void choose(char* title){// match titile then print content
+    pthread_mutex_lock(&log_lock);
+    for(int i=0;i<10;i++){
+        if (strcmp(title,logs[i].title)==0){
+            printf("%s\n",logs[i].content);
+            break;
+        }
+    }
+    pthread_mutex_lock(&log_lock);
+}
+
+int next_avaiable_index(void* array[]){ //find next empty spot in an array
+    for(int i=0;i<sizeof(*array)/sizeof(array[0]);i++){
+        if(array[i]==0){
+            return i;
+        }
+    }
+}
+
+void reply (int timestamp, char* content, char* title){
+    pthread_mutex_lock(&log_lock);
+    for(int i=0;i<10;i++){
+        if (strcmp(title,logs[i].title)==0){    //for match title update its reply indexes and post it
+            int next = next_avaiable_index(&logs[i].reply_indexes);
+            logs[i].reply_indexes[next]=log_read;
+            post(timestamp,title,content);
+        }
+    }
+    pthread_mutex_unlock(&log_lock);
+}
+
+void local_write(char type,char title,char content){
+    switch (type) {
+        case "Post" :
+            break;
+        case "Reply":
+            break;
+        case "Choose" :
+            break;
+        case "Read":
+        
+    }
+
 }
 
 int main(int argc, char *argv[]){

@@ -14,6 +14,8 @@
 
 struct log_entry {
     int timestamp;
+    int type;    //1 for article,0 for reply
     char title;
     char content;
+    int reply_indexes[20]=0;
 };
