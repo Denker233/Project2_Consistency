@@ -1,8 +1,10 @@
 #include <server.h>
 
+int server_ports=[server_num];
 int time_length = 20;
 int times[time_length];
 int time_index=0;
+int server_num =5;
 int server_socks = [5];
 int client_socks = [5];
 int log_read = 0;
@@ -10,13 +12,14 @@ struct log_entry logs = [10];
 bool is_primary;
 int server_sock; //socket to connect primary
 pthread_mutex_t log_lock = PTHREAD_MUTEX_INITIALIZER;
+int server_ports=[server_num];
 
 
 
-
-int createServerSock(){
+int createServerSock(int send_side){
     int sockfd;
-    struct sockaddr_in cli_addr;
+    struct sockaddr_in servaddr;
+
 
     if ((sockfd = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
         printf("\n Socket creation error \n");
@@ -26,15 +29,23 @@ int createServerSock(){
     memset(&cli_addr, '0', sizeof(cli_addr));
 
     /* Hardcoded IP and Port for every client*/
-    cli_addr.sin_family = AF_INET;
-    cli_addr.sin_port = 0;
-    cli_addr.sin_addr.s_addr = inet_addr("127.0.0.1");
+    servaddr.sin_family = AF_INET;
+    servaddr.sin_addr.s_addr = inet_addr("127.0.0.1");
+    servaddr.sin_port=0;
     
 
-    /* Bind the socket to a specific port */
-    if (bind(sockfd, (const struct sockaddr *) &cli_addr, sizeof(cli_addr)) < 0) {
+    /* Bind the socket to a specific port or connect to the other server abd ready to send message*/
+    if(send_side){
+        if (connect(sockfd, (SA*)&servaddr, sizeof(servaddr))!= 0) {
+        printf("connection with the server failed...\n");
+        exit(0);
+    }
+    }
+    else{
+        if (bind(sockfd, (const struct sockaddr *) &servaddr, sizeof(servaddr)) < 0) {
         printf("\nBind failed\n");
         return;
+    }
     }
     return sockfd;
 }
@@ -206,12 +217,14 @@ void *receiveMessage(int* socket)
     }
 }
 
-void* sendMessage(int* socket,char* message){
+int sendMessage(int* socket,void* message){
     int written_num= write(*socket, message, strlen(message) + 1);
     if(written_num<0){
         perror("written failed\n");
-        exit(0);
+        return 0;
     }
+    return 1;
+    
 }
 
 void connect_primary(){//connect primary and synchronize logs
@@ -223,11 +236,38 @@ void connect_primary(){//connect primary and synchronize logs
     }
 }
 
-void broadcast(){
-    int sychronized=0;
-    while(!synchonized){
+void *broadcast_handler(int socket,void* message){// not exiting until receive acknowledgement
+    sendMessage(sockets[i],&logs);
+    char buffer[1024];
+    memset(buffer, 0, 1024);
+    while(1){
+        if(recvfrom(sockfd, buffer, 1024, 0, NULL, NULL) > 0){
+            if(buffer[0]=="ack"){
+                break;
+            }
+        }
 
     }
+        
+}
+
+int broadcast(){
+    pthread_t broadcast_threads = [server_num-1];
+    int sockets[server_num-1];
+    for(int i=0;i<server_num-1;i++){
+        sockets[i]=createServerSock(1);
+        if( pthread_create( &broadcast_threads[i], NULL, broadcast_handler, (void*) &sockets[i], &logs) < 0){
+                    perror("could not create thread");
+                    return -1;
+        }
+    }
+    for(int i=0;i<server_num-1;i++){
+        if(pthread_join(broadcast_threads[i], NULL)!=0){ //all the servers receive ack then broadcast ends
+            perror("broadcast not receiving ack");
+            exit(0);
+        }
+    }
+    return 1;
 }
 
 void local_write(char type,char title,char content){
@@ -238,6 +278,7 @@ void local_write(char type,char title,char content){
             }
             else{
                 connect_primary(); //synchonized with the primary
+                post(time_index++,title,content); //update locally
                 broadcast(); //get every server synchronized
             }
         case "Reply":
@@ -245,7 +286,9 @@ void local_write(char type,char title,char content){
                 reply(time_index++,title,content);
             }
             else{
-
+                connect_primary(); //synchonized with the primary
+                reply(time_index++,title,content); //update locally
+                broadcast(); //get every server synchronized
             }
         case "Choose" :
             if(is_primary){
@@ -253,15 +296,17 @@ void local_write(char type,char title,char content){
                 choose(title);
             }
             else{
-
+                sleep(2);//wait for possible propagation from primary
+                choose(title);
             }
             break;
         case "Read":
-            if(is_primary){
+            if(is_primary){ 
                 read(number);
             }
             else{
-                //wait for a check with primary
+                sleep(2);//wait for possible propagation from primary
+                choose(title);
             }
         
         
@@ -277,41 +322,42 @@ int main(int argc, char *argv[]){
     pthread_t client_thread;
     char option;
     
-    client_sock = createClientSock(argv[1]);
-    mechanism = argv[2];
-    if(listen(client_sock,1) < 0){
-        perror("Could not listen for connections\n");
-        exit(0);
-    }
-    if(is_primary){
-        for (int i=0;i<5;i++){ // need connect to each server to get them sychronized
-        server_sock = createServerSock();
-        server_socks[i]=server_sock;
-        if(listen(server_sock,1) < 0) 
-            {
-                perror("Could not listen for connections\n");
-                exit(0);}
-            }
-    }
-    else{
-        server_sock = createServerSock();
-        if(listen(sock,1) < 0) 
-            {
+    while(1){
+        client_sock = createClientSock(argv[1]);
+        option = argv[2];
+        if(listen(client_sock,1) < 0){ //listen for the client 
+            perror("Could not listen for connections\n");
+            exit(0);
+        }
+        if(is_primary){
+            for (int i=0;i<server_num;i++){ // need connect to each server to get them sychronized
+            server_sock = createServerSock();
+            server_socks[i]=server_sock;
+            if(listen(server_sock,1) < 0) 
+                {
+                    perror("Could not listen for connections\n");
+                    exit(0);}
+                }
+        }
+        else{
+            server_sock = createServerSock();
+            if(listen(sock,1) < 0) {
                 perror("Could not listen for connections\n");
                 exit(0);
             }
-        server_socks[0]=server_sock;
-    }
-    while(1){
+            server_socks[0]=server_sock;
+            }
+        while(1){
             while(( client_socket = accept(client_sock, (struct sockaddr *)&clientName, (socklen_t *)&size))){
                 printf("A Client connected!\n");
-                if( pthread_create( &client_thread, NULL, connection_handler, (void*) &client_socket, option) < 0)
-                        {
-                            perror("could not create thread");
-                            return 1;
-                        }
+                if( pthread_create( &client_thread, NULL, connection_handler, (void*) &client_socket, option) < 0){
+                    perror("could not create thread");
+                    return 1;
+                }
             }
         }
+    }
+    
 }
 
 
