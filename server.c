@@ -1,14 +1,15 @@
-#include <server.h>
+#include "server.h"
+#define server_num 5
+#define time_length 20
 
-int server_ports=[server_num];
-int time_length = 20;
-int times[time_length];
+int server_ports[server_num];
+
+int time_array[time_length];
 int time_index=0;
-int server_num =5;
-int server_socks = [5];
-int client_socks = [5];
+int server_socks[5];
+int client_socks[5];
 int log_read = 0;
-struct log_entry logs = [10];
+struct log_entry logs[10];
 bool is_primary;
 int server_sock; //socket to connect primary
 pthread_mutex_t log_lock = PTHREAD_MUTEX_INITIALIZER;
@@ -53,6 +54,7 @@ int createServerSock(int send_side){
 int createClientSock(char name){
     int sockfd;
     struct sockaddr_in cli_addr;
+    char host[20];
 
     if ((sockfd = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
         printf("\n Socket creation error \n");
@@ -61,7 +63,7 @@ int createClientSock(char name){
 
     memset(&cli_addr, '0', sizeof(cli_addr));
 
-    if ((host = gethostbyname(name)) == NULL) { //get host name for client
+    if ((&host = gethostbyname(&name)) == NULL) { //get host name for client
       perror("Sender: Client-gethostbyname() error lol!");
       exit(1);
       }
@@ -80,9 +82,13 @@ int createClientSock(char name){
     return sockfd;
 }
 
-void *connection_handler(void *client_socket, char option){ //handler to deal with client request
+void *connection_handler(void *args){ //handler to deal with client request
+    int client_socket = args->arg1;
+    char option = args->arg1;
     int read_size;
     char type,tittle,content;
+    char client_message[200];
+    memset(client_message, 0, 1024);
     while((read_size = recv(&client_socket, client_message, 2000, 0)) > 0)
     {   //break down the message into different parts
         int j = sprintf_s(client_message, sizeof(client_message), "%s,%s,%s",type,tittle,content);
@@ -97,8 +103,8 @@ void *connection_handler(void *client_socket, char option){ //handler to deal wi
             local_write(type,tittle,content);
         }
         client_message[read_size] = '\0';
-        write(sock, message_to_client, strlen(message_to_client));
-        memset(client_message, 0, 2000);
+        // write(sock, message_to_client, strlen(message_to_client));
+        // memset(client_message, 0, 2000);
     }
 }
 
@@ -116,8 +122,8 @@ void print_reply(int index,int loop){//recursively print every reply
         printf("    ");
         loop--;
     }
-    printf("%s\n",logs[i].title);
-    if(logs[index].reply_indexes){
+    printf("%s\n",logs[index].title);
+    if(logs[index].reply_indexes[0]){
         int i=0;
         while(logs[index].reply_indexes[i]){
             print_reply(reply_indexes[i],loop+1);
@@ -236,7 +242,9 @@ void connect_primary(){//connect primary and synchronize logs
     }
 }
 
-void *broadcast_handler(int socket,void* message){// not exiting until receive acknowledgement
+void *broadcast_handler(void* arguments){// not exiting until receive acknowledgement
+    int socket = *(arguments->arg1);
+    void* message = arguments->arg2;
     sendMessage(sockets[i],&logs);
     char buffer[1024];
     memset(buffer, 0, 1024);
@@ -254,9 +262,10 @@ void *broadcast_handler(int socket,void* message){// not exiting until receive a
 int broadcast(){
     pthread_t broadcast_threads = [server_num-1];
     int sockets[server_num-1];
+    struct broadcast_args *arguments;
     for(int i=0;i<server_num-1;i++){
         sockets[i]=createServerSock(1);
-        if( pthread_create( &broadcast_threads[i], NULL, broadcast_handler, (void*) &sockets[i], &logs) < 0){
+        if( pthread_create( &broadcast_threads[i], NULL, broadcast_handler, (void*) arguments) < 0){
                     perror("could not create thread");
                     return -1;
         }
@@ -270,9 +279,9 @@ int broadcast(){
     return 1;
 }
 
-void local_write(char type,char title,char content){
-    switch (type) {
-        case "Post" :
+void local_write(char* type,char* title,char* content){
+    int number;
+        if(strcmp("Post",type)==0){
             if(is_primary){
                 post(time_index++,title,content);
             }
@@ -281,7 +290,8 @@ void local_write(char type,char title,char content){
                 post(time_index++,title,content); //update locally
                 broadcast(); //get every server synchronized
             }
-        case "Reply":
+        }
+        else if(strcmp("Reply",type)==0){
             if(is_primary){
                 reply(time_index++,title,content);
             }
@@ -290,7 +300,8 @@ void local_write(char type,char title,char content){
                 reply(time_index++,title,content); //update locally
                 broadcast(); //get every server synchronized
             }
-        case "Choose" :
+        }
+        else if(strcmp("Choose",type)==0){
             if(is_primary){
                 //wait for a heartbeat/broadcast() time that goes back and forth to a primary
                 choose(title);
@@ -299,49 +310,48 @@ void local_write(char type,char title,char content){
                 sleep(2);//wait for possible propagation from primary
                 choose(title);
             }
-            break;
-        case "Read":
+        }
+        else if(strcmp("Read",type)==0){
+            scanf("%d",&number);
             if(is_primary){ 
-                read(number);
             }
             else{
                 sleep(2);//wait for possible propagation from primary
-                choose(title);
             }
+            read(number);
+        }
         
         
 
         
-    }
 
 }
 
 int main(int argc, char *argv[]){
-    int client_sock,client_socket
+    int client_sock,client_socket;
     socklen_t size;
     pthread_t client_thread;
-    char option;
+    char option[10];
+    struct arg_struct *args;
+    struct sockaddr clientName;
+
     
     while(1){
         client_sock = createClientSock(argv[1]);
-        option = argv[2];
+        strncpy(option,argv[2],10);
         if(listen(client_sock,1) < 0){ //listen for the client 
             perror("Could not listen for connections\n");
             exit(0);
         }
         if(is_primary){
             for (int i=0;i<server_num;i++){ // need connect to each server to get them sychronized
-            server_sock = createServerSock();
+            server_sock = createServerSock(1);
             server_socks[i]=server_sock;
-            if(listen(server_sock,1) < 0) 
-                {
-                    perror("Could not listen for connections\n");
-                    exit(0);}
-                }
+            }
         }
         else{
-            server_sock = createServerSock();
-            if(listen(sock,1) < 0) {
+            server_sock = createServerSock(0);
+            if(listen(server_sock,1) < 0) {
                 perror("Could not listen for connections\n");
                 exit(0);
             }
@@ -350,10 +360,13 @@ int main(int argc, char *argv[]){
         while(1){
             while(( client_socket = accept(client_sock, (struct sockaddr *)&clientName, (socklen_t *)&size))){
                 printf("A Client connected!\n");
-                if( pthread_create( &client_thread, NULL, connection_handler, (void*) &client_socket, option) < 0){
+                args->arg1=&client_socket;
+                strcpy(args->arg2,option);
+                if( pthread_create( &client_thread, NULL, connection_handler, (void*) args) < 0){
                     perror("could not create thread");
                     return 1;
                 }
+                
             }
         }
     }
