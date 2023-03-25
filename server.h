@@ -15,10 +15,10 @@
 
 struct log_entry {
     int timestamp;
-    int type;    //1 for article,0 for reply
-    char title;
-    char content;
-    int reply_indexes[20]={ 0 };
+    int type;              //1 for article,0 for reply
+    char* title;
+    char* content;
+    int reply_indexes[20];
 };
 
 struct arg_struct {
@@ -27,6 +27,6 @@ struct arg_struct {
 };
 
 struct broadcast_args {
-    void*  arg1;
-    void* arg2;
+    int*  arg1;
+    char arg2[1024];
 };
