@@ -18,7 +18,7 @@ struct log_entry {
     int type;              //1 for article,0 for reply
     char* title;
     char* content;
-    int reply_indexes[20];
+    int reply_indexes[20]; //array of reply message indexes
 };
 
 struct arg_struct {

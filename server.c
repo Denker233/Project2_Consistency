@@ -85,21 +85,28 @@ void *connection_handler(struct arg_struct *args){ //handler to deal with client
     char option[10];
     strcpy(option,args->arg2);
     int read_size;
-    char type,tittle,content;
-    char client_message[200];
+    char type[5],title[10],content[1024];
+    char client_message[1050];
     memset(client_message, 0, 1024);
     while((read_size = recv(client_socket, client_message, 2000, 0)) > 0)
     {   //break down the message into different parts
-        int j = sprintf_s(client_message, sizeof(client_message), "%s,%s,%s",type,tittle,content);
         printf("Client[%d]: %s", client_socket, client_message);
+        char* token = strtok(client_message," ");
+        strcpy(type,token);
+        token = strtok(NULL," ");
+        strcpy(title,token);
+        token = strtok(NULL," ");
+        strcpy(content,token);
         if(strcmp(option,"primary_backup")==0){
-            primary(type,tittle,content);
+            // primary(type,title,content);
+            exit(0);
         }
         else if(strcmp(option,"quorum")==0){
-            quorum(type,tittle,content);
+            // quorum(type,title,content);
+            exit(0);
         }
         else if(strcmp(option,"local_write")==0){
-            local_write(type,tittle,content);
+            local_write(type,title,content);
         }
         client_message[read_size] = '\0';
         // write(sock, message_to_client, strlen(message_to_client));
@@ -158,8 +165,8 @@ void choose(char* title){// match titile then print content
     pthread_mutex_lock(&log_lock);
 }
 
-int next_avaiable_index(void* array[]){ //find next empty spot in an array
-    for(int i=0;i<sizeof(*array)/sizeof(array[0]);i++){
+int next_avaiable_index(int array[],int num_element){ //find next empty spot in an array
+    for(int i=0;i<num_element;i++){
         if(array[i]==0){
             return i;
         }
@@ -171,7 +178,7 @@ void reply (int timestamp, char* content, char* title){
     char reply_title[30];
     for(int i=0;i<10;i++){
         if (strcmp(title,logs[i].title)==0){    //for match title update its reply indexes and post it
-            int next = next_avaiable_index(logs[i].reply_indexes);
+            int next = next_avaiable_index(logs[i].reply_indexes,20);
             char str[30];
             logs[i].reply_indexes[next]=log_read;
             sprintf(str,"A reply to Article %d",logs[i].title[0]); //timestamp might get changed only the first number is persistant
@@ -341,38 +348,38 @@ int main(int argc, char *argv[]){
     int client_sock,client_socket;
     socklen_t size;
     pthread_t client_thread;
-    char option[10];
+    char option[10]; //input for choice of strategy
     struct arg_struct *args;
     struct sockaddr clientName;
-    for(int l=0;l<10;l++){
+    for(int l=0;l<10;l++){ //set up reply_indexes
         for(int n=0;n<20;n++){
             logs[l].reply_indexes[n]=0;
             }
     }
-    
-    while(1){
-        client_sock = createClientSock(argv[1]);
-        strncpy(option,argv[2],10);
-        if(listen(client_sock,1) < 0){ //listen for the client 
+    client_sock = createClientSock(argv[1]);
+    strncpy(option,argv[2],10);
+    if(listen(client_sock,1) < 0){ //listen for the client 
+        perror("Could not listen for connections\n");
+        exit(0);
+    }
+    if(is_primary){
+        for (int i=0;i<server_num;i++){ // need connect to each server to get them sychronized
+        server_sock = createServerSock(1);
+        server_socks[i]=server_sock;
+        }
+    }
+    else{
+        server_sock = createServerSock(0);
+        if(listen(server_sock,1) < 0) {
             perror("Could not listen for connections\n");
             exit(0);
         }
-        if(is_primary){
-            for (int i=0;i<server_num;i++){ // need connect to each server to get them sychronized
-            server_sock = createServerSock(1);
-            server_socks[i]=server_sock;
-            }
-        }
-        else{
-            server_sock = createServerSock(0);
-            if(listen(server_sock,1) < 0) {
-                perror("Could not listen for connections\n");
-                exit(0);
-            }
-            server_socks[0]=server_sock;
-            }
-        while(1){
-            while(( client_socket = accept(client_sock, (struct sockaddr *)&clientName, (socklen_t *)&size))){
+        server_socks[0]=server_sock;
+    }
+    
+   
+    while(1){
+            if(( client_socket = accept(client_sock, (struct sockaddr *)&clientName, (socklen_t *)&size))){
                 printf("A Client connected!\n");
                 args->arg1=&client_socket;
                 strcpy(args->arg2,option);
@@ -382,8 +389,8 @@ int main(int argc, char *argv[]){
                 }
                 
             }
-        }
     }
+    
     
 }
 
