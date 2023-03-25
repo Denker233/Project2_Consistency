@@ -9,12 +9,12 @@ int server_socks[5];
 int client_socks[5];
 int log_read = 0;
 struct log_entry logs[10];
-bool is_primary;
+bool is_primary=false;
 int server_sock; //socket to connect primary
 pthread_mutex_t log_lock = PTHREAD_MUTEX_INITIALIZER;
 
 
-
+void local_write(char* type,char* title,char* content);
 int createServerSock(int send_side){
     int sockfd;
     struct sockaddr_in servaddr;
@@ -68,7 +68,7 @@ int createClientSock(char* name){
 
     /* Hardcoded IP and Port for every client*/
     cli_addr.sin_family = AF_INET;
-    cli_addr.sin_port = 0;
+    cli_addr.sin_port = htons(8221);
     cli_addr.sin_addr = *((struct in_addr *)host->h_addr); // or any address
     
 
@@ -350,13 +350,14 @@ int main(int argc, char *argv[]){
     pthread_t client_thread;
     char option[10]; //input for choice of strategy
     struct arg_struct *args;
-    struct sockaddr clientName;
+    struct sockaddr clientName={};
     for(int l=0;l<10;l++){ //set up reply_indexes
         for(int n=0;n<20;n++){
             logs[l].reply_indexes[n]=0;
             }
     }
-    client_sock = createClientSock(argv[1]);
+    printf("before create all the sockets\n");
+    client_sock = createClientSock("csel-kh1262-05");
     strncpy(option,argv[2],10);
     if(listen(client_sock,1) < 0){ //listen for the client 
         perror("Could not listen for connections\n");
@@ -367,6 +368,7 @@ int main(int argc, char *argv[]){
         server_sock = createServerSock(1);
         server_socks[i]=server_sock;
         }
+        printf("is primary sockets\n");
     }
     else{
         server_sock = createServerSock(0);
@@ -375,10 +377,12 @@ int main(int argc, char *argv[]){
             exit(0);
         }
         server_socks[0]=server_sock;
+        printf("not primary sockets\n");
     }
     
    
     while(1){
+            printf("while 1 loop\n");
             if(( client_socket = accept(client_sock, (struct sockaddr *)&clientName, (socklen_t *)&size))){
                 printf("A Client connected!\n");
                 args->arg1=&client_socket;
