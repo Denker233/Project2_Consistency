@@ -57,9 +57,10 @@ void send_request(struct hostent* host, int server_port, char* message) {
         < 0) {
         printf("\nConnection Failed \n");
     }
-    if (send(client_socket, message, strlen(message),0) < 0) {
-        perror("Error sending message to server");
-        exit(1);
+    if (send(client_socket, message, strlen(message),0) > 0) {
+        printf("send success\n");
+        // perror("Error sending message to server");
+        // exit(1);
     }
     printf("after send\n");
 
@@ -87,13 +88,14 @@ int main(int argc, char** argv) { // ip port key value
     int server_port = atoi(argv[2]);
 
     // read the key and value from the command-line arguments
-    char* key = argv[3];
-    char* value = argv[4];
+    char* type = argv[3];
+    char* title = argv[4];
+    char* content = argv[5];
 
     // send a PUT request to the specified server
     char message[MAX_MESSAGE_LENGTH];
     memset(message, 0, MAX_MESSAGE_LENGTH);
-    snprintf(message, MAX_MESSAGE_LENGTH-1, "%s:%s", key, value);
+    snprintf(message, MAX_MESSAGE_LENGTH-1, "%s:%s:%s", type, title,content);
     send_request(host, server_port, message);
 
     return 0;

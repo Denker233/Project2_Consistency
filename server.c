@@ -80,22 +80,29 @@ int createClientSock(char* name){
     return sockfd;
 }
 
-void *connection_handler(struct arg_struct *args){ //handler to deal with client request
+void *connection_handler(struct arg_struct *args){  //handler to deal with client request
+    printf("handler\n");
     int client_socket = *(args->arg1);
-    char option[10];
-    strcpy(option,args->arg2);
+    printf("client_socket: %d\n",client_socket);
+    char option[15];
+    strcpy(option,"local_write");
+    // strcpy(option,args->arg2);
     int read_size;
     char type[5],title[10],content[1024];
     char client_message[1050];
     memset(client_message, 0, 1024);
-    while((read_size = recv(client_socket, client_message, 2000, 0)) > 0)
+    printf("before handler while\n");
+    if((read_size = recv(client_socket, client_message, 1050,0)) > 0)
     {   //break down the message into different parts
+        printf("in while loop\n");
+        printf("Client socket: %d\n", client_socket);
+        printf("Client message: %s\n", client_message);
         printf("Client[%d]: %s", client_socket, client_message);
-        char* token = strtok(client_message," ");
+        char* token = strtok(client_message,":");
         strcpy(type,token);
-        token = strtok(NULL," ");
+        token = strtok(NULL,":");
         strcpy(title,token);
-        token = strtok(NULL," ");
+        token = strtok(NULL,":");
         strcpy(content,token);
         if(strcmp(option,"primary_backup")==0){
             // primary(type,title,content);
@@ -112,6 +119,7 @@ void *connection_handler(struct arg_struct *args){ //handler to deal with client
         // write(sock, message_to_client, strlen(message_to_client));
         // memset(client_message, 0, 2000);
     }
+    printf("after handler while\n");
 }
 
 void post(int timestamp,char* title,char* content){
@@ -259,7 +267,7 @@ void *broadcast_handler(struct broadcast_args* arguments){// not exiting until r
     memset(buffer, 0, 1024);
     if(send(socket,message,1024, 0)<0){
         perror("broadcast send fail\n");
-        }
+    }
     while(1){
         if(recv(socket, buffer, 1024, 0) > 0){
             if(strcmp(&buffer[0],"ack")==0){
@@ -349,7 +357,7 @@ int main(int argc, char *argv[]){
     socklen_t size;
     pthread_t client_thread;
     char option[10]; //input for choice of strategy
-    struct arg_struct *args;
+    struct arg_struct *args=malloc(sizeof(struct arg_struct));
     struct sockaddr clientName={};
     for(int l=0;l<10;l++){ //set up reply_indexes
         for(int n=0;n<20;n++){
@@ -382,20 +390,25 @@ int main(int argc, char *argv[]){
     
    
     while(1){
-            printf("while 1 loop\n");
-            if(( client_socket = accept(client_sock, (struct sockaddr *)&clientName, (socklen_t *)&size))){
-                printf("A Client connected!\n");
-                args->arg1=&client_socket;
-                strcpy(args->arg2,option);
-                if( pthread_create( &client_thread, NULL, (void *)connection_handler, (void*) args) < 0){
-                    perror("could not create thread");
-                    return 1;
-                }
-                
+        printf("while 1 loop\n");
+        while(( client_socket = accept(client_sock, (struct sockaddr *)&clientName, (socklen_t size)>0))){
+            printf("A Client connected!\n");
+            args->arg1=&client_socket;  // save socket to the client socket list
+            printf("%d,%d\n",client_socket,*(args->arg1));
+            strcpy(args->arg2,option);
+            char client_message[126];
+            memset(client_message, 0, 126);
+            int read_size = recv(client_socket, client_message, 1050,0);
+            printf("Main: recv %d bytes\n", read_size);
+            if( pthread_create( &client_thread, NULL, (void *)connection_handler, (void*) args) < 0){
+                perror("could not create thread");
+                return 1;
             }
+            
+        }
     }
-    
-    
+    free(args);
+
 }
 
 
