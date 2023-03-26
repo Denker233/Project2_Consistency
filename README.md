@@ -10,12 +10,12 @@ argv[3] : port 4000\
 run client
 ip: not useful now, can be any number
 ```
-./client <ip> <port> <option:post/read/choose/reply> <title> <content>
+./client <port> <option:post/read/choose/reply> <title> <content>
 ```
 
 example:
 ```
 ./server primary local_write 4000
 ./server 1 local_write 4001
-./client 1 4000 Post abc cba
+./client 4000 Post abc cba
 ```
