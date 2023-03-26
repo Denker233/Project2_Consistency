@@ -33,7 +33,7 @@ int createServerSock(int send_side){
     servaddr.sin_family = AF_INET;
     // servaddr.sin_addr.s_addr = inet_addr("127.0.0.1");
     servaddr.sin_addr.s_addr=htonl(INADDR_ANY);
-    servaddr.sin_port=htons(5000); //5000 reserve for primary port
+    servaddr.sin_port=htons(8000); //5000 reserve for primary port
     
     printf("%d\n",send_side);
 
@@ -49,10 +49,13 @@ int createServerSock(int send_side){
     }
     else{
         printf("try to bind primary sock\n");
-        servaddr.sin_addr.s_addr=htonl(INADDR_ANY);
+        // servaddr.sin_addr.s_addr=htonl(INADDR_ANY);
         if (bind(sockfd, (const struct sockaddr *) &servaddr, sizeof(servaddr)) < 0) {
         printf("\nBind failed\n");
         return -1;
+    }
+    else{
+        printf("bind success\n");
     }
     }
     return sockfd;
@@ -445,7 +448,7 @@ int main(int argc, char *argv[]){
     }
     // is_primary = strcmp(argv[1],"primary")==0;
     while(1){
-        int client_sock,client_socket,primary_socket;
+    int client_sock,client_socket,primary_socket;
     socklen_t size_primary,size_client;
     pthread_t client_thread;
     pthread_t primary_thread[server_num-1];
@@ -466,10 +469,13 @@ int main(int argc, char *argv[]){
         exit(0);
     }
     printf("before primary\n");
-    if(is_primary){
-        for (int i=0;i<server_num;i++){ // need connect to each server to get them sychronized
+    if(is_primary){//receive side
         server_sock = createServerSock(0);
-        server_socks[i]=server_sock;
+        if(listen(server_sock,server_num-1) < 0){ //listen for the client 
+        perror("Could not listen for connections client\n");
+        exit(0);
+        }
+        for (int i=0;i<server_num;i++){ // need connect to each server to get them sychronized
         if( pthread_create( &primary_thread[i], NULL, (void *)connect_primary ,(int*) &server_sock) < 0){
                 perror("could not create thread");
                 return 1;
@@ -477,12 +483,8 @@ int main(int argc, char *argv[]){
         }
         printf("is primary sockets\n");
     }
-    else{
+    else{//send side
         server_sock = createServerSock(1);
-        if(listen(server_sock,1) < 0) {
-            perror("Could not listen for connections serversocket\n");
-            exit(0);
-        }
         server_socks[0]=server_sock;
         printf("not primary sockets\n");
     }
