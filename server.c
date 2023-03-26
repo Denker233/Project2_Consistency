@@ -88,17 +88,30 @@ int createClientSock(char* name,int port){
     return sockfd;
 }
 
-void *connection_handler(struct arg_struct *args){  //handler to deal with client request
-    printf("handler\n");
-    int client_socket = *(args->arg1);
-    printf("client_socket: %d\n",client_socket);
+void *connection_handler(int client_sock){  //handler to deal with client request
+    printf("connect_handler\n");
+    int client_socket;
+    socklen_t size_client;
     char option[15];
+    struct sockaddr clientName={};
     strcpy(option,"local_write");
     // strcpy(option,args->arg2);
     int read_size;
     char type[5],title[10],content[1024];
     char client_message[1050];
     memset(client_message, 0, 1024);
+    if(( client_socket = accept(client_sock, (struct sockaddr *)&clientName, (socklen_t*) &size_client))>0){
+            printf("A Client connected!\n");
+            args->arg1=&client_socket;  // save socket to the client socket list
+            printf("%d,%d\n",client_socket,*(args->arg1));
+            strcpy(args->arg2,option);
+            // printf("Main: recv %d bytes\n", read_size);
+            if( pthread_create( &client_thread, NULL, (void *)connection_handler, (void*) args) < 0){
+                perror("could not create thread");
+                return 1;
+            }
+            
+    }
     printf("before handler while\n");
     if((read_size = recv(client_socket, client_message, 1050,0)) > 0)
     {   //break down the message into different parts
@@ -414,11 +427,17 @@ int main(int argc, char *argv[]){
         server_socks[0]=server_sock;
         printf("not primary sockets\n");
     }
+
+    if( pthread_create( &client_thread, NULL, (void *)connection_handler, (int) client_sock) < 0){
+                perror("could not create thread");
+                return 1;
+    }
+    
     
    
     while(1){
         printf("while 1 loop\n");
-        while(( client_socket = accept(client_sock, (struct sockaddr *)&clientName, (socklen_t*) &size_client))>0){
+        if(( client_socket = accept(client_sock, (struct sockaddr *)&clientName, (socklen_t*) &size_client))>0){
             printf("A Client connected!\n");
             args->arg1=&client_socket;  // save socket to the client socket list
             printf("%d,%d\n",client_socket,*(args->arg1));
@@ -432,9 +451,9 @@ int main(int argc, char *argv[]){
         }
         while(!is_primary){
             while(( primary_socket = accept(server_socks[0], (struct sockaddr *)&primaryName, (socklen_t*) &size_primary))>0){
-
+                printf("A primary connected!\n");
             }
-        }
+        }sadghasgdjhashdg
     }
     free(args);
 
