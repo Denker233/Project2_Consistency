@@ -40,6 +40,8 @@ void send_request(struct hostent* host, int server_port, char* message) {
     server_address.sin_addr = *((struct in_addr *)host->h_addr); // or any address
     // server_address.sin_addr.s_addr = inet_addr(server_ip);
     server_address.sin_port = htons(server_port);
+    printf("%d\n",server_port);
+
 
     // if (inet_pton(AF_INET, server_address.sin_addr, &server_address.sin_addr)
     //     <= 0) {
@@ -81,7 +83,7 @@ void send_request(struct hostent* host, int server_port, char* message) {
 int main(int argc, char** argv) { // ip port key value
     // read the server IP address and port number from the command-line arguments
     struct hostent* host;
-    if ((host = gethostbyname("csel-kh1262-05")) == NULL) { //get host name for client
+    if ((host = gethostbyname("csel-kh1250-10")) == NULL) { //get host name for client
       perror("client host error");
       exit(1);
     }

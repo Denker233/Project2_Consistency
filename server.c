@@ -53,11 +53,16 @@ int createClientSock(char* name){
     int sockfd;
     struct sockaddr_in cli_addr;
     struct hostent* host;
+    int yes=1;
 
     if ((sockfd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
         printf("\n Socket creation error \n");
         return -1;
     }
+    if (setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes)) == -1) {
+    perror("setsockopt");
+    exit(1);
+}
 
     memset(&cli_addr, '0', sizeof(cli_addr));
 
@@ -68,13 +73,13 @@ int createClientSock(char* name){
 
     /* Hardcoded IP and Port for every client*/
     cli_addr.sin_family = AF_INET;
-    cli_addr.sin_port = htons(8221);
+    cli_addr.sin_port = htons(3000);
     cli_addr.sin_addr = *((struct in_addr *)host->h_addr); // or any address
     
 
     /* Bind the socket to a specific port */
     if (bind(sockfd, (const struct sockaddr *) &cli_addr, sizeof(cli_addr)) < 0) {
-        printf("connect failed\n");
+        printf("connect failed in client sock bind\n");
         return -1;
     }
     return sockfd;
@@ -353,10 +358,11 @@ void local_write(char* type,char* title,char* content){
 }
 
 int main(int argc, char *argv[]){
+    printf("begin of main\n");
     int client_sock,client_socket;
     socklen_t size;
     pthread_t client_thread;
-    char option[10]; //input for choice of strategy
+    char option[15]; //input for choice of strategy
     struct arg_struct *args=malloc(sizeof(struct arg_struct));
     struct sockaddr clientName={};
     for(int l=0;l<10;l++){ //set up reply_indexes
@@ -365,12 +371,14 @@ int main(int argc, char *argv[]){
             }
     }
     printf("before create all the sockets\n");
-    client_sock = createClientSock("csel-kh1262-05");
-    strncpy(option,argv[2],10);
+    printf("before create all the sockets\n");
+    client_sock = createClientSock("csel-kh1250-10");
+    strcpy(option,argv[2]);
     if(listen(client_sock,1) < 0){ //listen for the client 
-        perror("Could not listen for connections\n");
+        perror("Could not listen for connections client\n");
         exit(0);
     }
+    printf("before primary\n");
     if(is_primary){
         for (int i=0;i<server_num;i++){ // need connect to each server to get them sychronized
         server_sock = createServerSock(1);
@@ -381,7 +389,7 @@ int main(int argc, char *argv[]){
     else{
         server_sock = createServerSock(0);
         if(listen(server_sock,1) < 0) {
-            perror("Could not listen for connections\n");
+            perror("Could not listen for connections serversocket\n");
             exit(0);
         }
         server_socks[0]=server_sock;
@@ -391,15 +399,12 @@ int main(int argc, char *argv[]){
    
     while(1){
         printf("while 1 loop\n");
-        while(( client_socket = accept(client_sock, (struct sockaddr *)&clientName, (socklen_t size)>0))){
+        while(( client_socket = accept(client_sock, (struct sockaddr *)&clientName, (socklen_t*) &size))>0){
             printf("A Client connected!\n");
             args->arg1=&client_socket;  // save socket to the client socket list
             printf("%d,%d\n",client_socket,*(args->arg1));
             strcpy(args->arg2,option);
-            char client_message[126];
-            memset(client_message, 0, 126);
-            int read_size = recv(client_socket, client_message, 1050,0);
-            printf("Main: recv %d bytes\n", read_size);
+            // printf("Main: recv %d bytes\n", read_size);
             if( pthread_create( &client_thread, NULL, (void *)connection_handler, (void*) args) < 0){
                 perror("could not create thread");
                 return 1;
