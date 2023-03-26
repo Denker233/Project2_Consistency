@@ -9,9 +9,11 @@ int server_socks[5];
 int client_socks[5];
 int log_read = 0;
 struct log_entry logs[10];
-bool is_primary=false;
+bool send_ready,receive_ready,is_primary=false;
 int server_sock; //socket to connect primary
 pthread_mutex_t log_lock = PTHREAD_MUTEX_INITIALIZER;
+char messageTosend[1024];
+int num_ack = 0;
 
 
 void local_write(char* type,char* title,char* content);
@@ -102,46 +104,37 @@ void *connection_handler(int client_sock){  //handler to deal with client reques
     memset(client_message, 0, 1024);
     if(( client_socket = accept(client_sock, (struct sockaddr *)&clientName, (socklen_t*) &size_client))>0){
             printf("A Client connected!\n");
-            args->arg1=&client_socket;  // save socket to the client socket list
-            printf("%d,%d\n",client_socket,*(args->arg1));
-            strcpy(args->arg2,option);
-            // printf("Main: recv %d bytes\n", read_size);
-            if( pthread_create( &client_thread, NULL, (void *)connection_handler, (void*) args) < 0){
-                perror("could not create thread");
-                return 1;
+            if((read_size = recv(client_socket, client_message, 1050,0)) > 0){   //break down the message into different parts
+                printf("in while loop\n");
+                printf("Client socket: %d\n", client_socket);
+                printf("Client message: %s\n", client_message);
+                printf("Client[%d]: %s\n", client_socket, client_message);
+                char* token = strtok(client_message,":");
+                strcpy(type,token);
+                token = strtok(NULL,":");
+                strcpy(title,token);
+                token = strtok(NULL,":");
+                strcpy(content,token);
+                if(strcmp(option,"primary_backup")==0){
+                    // primary(type,title,content);
+                    exit(0);
+                }
+                else if(strcmp(option,"quorum")==0){
+                    // quorum(type,title,content);
+                    exit(0);
+                }
+                else if(strcmp(option,"local_write")==0){
+                    printf("before local\n");
+                    local_write(type,title,content);
+                }
+                client_message[read_size] = '\0';
             }
             
     }
-    printf("before handler while\n");
-    if((read_size = recv(client_socket, client_message, 1050,0)) > 0)
-    {   //break down the message into different parts
-        printf("in while loop\n");
-        printf("Client socket: %d\n", client_socket);
-        printf("Client message: %s\n", client_message);
-        printf("Client[%d]: %s\n", client_socket, client_message);
-        char* token = strtok(client_message,":");
-        strcpy(type,token);
-        token = strtok(NULL,":");
-        strcpy(title,token);
-        token = strtok(NULL,":");
-        strcpy(content,token);
-        if(strcmp(option,"primary_backup")==0){
-            // primary(type,title,content);
-            exit(0);
-        }
-        else if(strcmp(option,"quorum")==0){
-            // quorum(type,title,content);
-            exit(0);
-        }
-        else if(strcmp(option,"local_write")==0){
-            printf("before local\n");
-            local_write(type,title,content);
-        }
-        client_message[read_size] = '\0';
-        // write(sock, message_to_client, strlen(message_to_client));
-        // memset(client_message, 0, 2000);
+    else{
+        perror("accept error in connect client accept\n");
     }
-    printf("after handler while\n");
+    
 }
 
 void post(int timestamp,char* title,char* content){
@@ -239,24 +232,53 @@ void reply (int timestamp, char* content, char* title){
 //     }
 // }
 
-void *receiveMessage(int* socket)
+// void* receiveMessage(int* socket)
+// {
+//     char buffer[1024];
+//     memset(buffer, 0, 1024);
+//     while (1){
+//         if (recv(*socket, buffer, 1024, 0) > 0){//primary send timestamp otherwise send logs[] or an array of timestamp?
+//             if(sizeof(buffer)==sizeof(logs)){//already synchronized
+//                 is_primary=1;
+//                 send(*socket,"not_primary",strlen("not_primary"),0);//make primary not primary
+//                 break;
+//             }
+//             else{
+//                 is_primary=1;
+//                 memcpy(&logs,&buffer,sizeof(buffer));
+//                 break;
+//             }
+//         }
+//         memset(buffer, 0, 1024);
+//     }
+// }
+
+void* receiveMessage(int* socket)
 {
-    char buffer[1024];
-    memset(buffer, 0, 1024);
+    char message[1024];
+    char* ptr=message;
+    memset(message, 0, 1024);
+    int num, read_size=0;
     while (1){
-        if (recv(*socket, buffer, 1024, 0) > 0){//primary send timestamp otherwise send logs[] or an array of timestamp?
-            if(sizeof(buffer)==sizeof(logs)){//already synchronized
-                is_primary=1;
-                send(*socket,"not_primary",strlen("not_primary"),0);//make primary not primary
-                break;
-            }
-            else{
-                is_primary=1;
-                memcpy(&logs,&buffer,sizeof(buffer));
+        if (read_size=recv(*socket, ptr, 1024, 0) > 0){//primary send timestamp otherwise send logs[] or an array of timestamp?
+            // if(sizeof(buffer)==sizeof(logs)){//already synchronized
+            //     // is_primary=1;
+            //     // send(*socket,"not_primary",strlen("not_primary"),0);//make primary not primary
+            //     // break;
+
+            // }
+            // else{
+            //     is_primary=1;
+            //     memcpy(&logs,&buffer,sizeof(buffer));
+            //     break;
+            // }
+            num+=read_size;
+            ptr+=read_size;
+            if (num==1024){
+                return message;
                 break;
             }
         }
-        memset(buffer, 0, 1024);
     }
 }
 
@@ -270,13 +292,32 @@ int sendMessage(int* socket,void* message){
     
 }
 
-void connect_primary(){//connect primary and synchronize logs
+void connect_primary(int server_sock){//connect primary and synchronize logs
     struct sockaddr serverName;
-    int server_socket=server_socks[0];
+    int server_socket,num_ack;
     socklen_t size;
-    while((server_socket = accept(server_sock, (struct sockaddr *)&serverName, (socklen_t *)&size))){
+     char buffer[1024];
+    if((server_socket = accept(server_sock, (struct sockaddr *)&serverName, (socklen_t *)&size))>=0){
         printf("primary server connected");
-        receiveMessage(&server_socket);
+    }
+
+    sendMessage(server_socket,logs);
+
+    while(1){
+        if(send_ready){
+            sendMessage(server_socket,messageTosend);
+            memset(messageTosend, 0, 1024);
+        }
+        if(receive_ready){
+            strcpy(buffer,receiveMessage(server_socket));
+            if(strcmp(buffer[0],"syn")==0){
+                sendMessage(server_socket,logs);
+            }
+            else if(strcpy(buffer[0],"ack")==0){
+                num_ack++;
+            }
+            memset(buffer, 0, 1024);
+        }
     }
 }
 
@@ -332,10 +373,13 @@ void local_write(char* type,char* title,char* content){
         if(strcmp("Post",type)==0){
             if(is_primary){
                 post(time_index++,title,content);
+                broadcast();
             }
             else{
                 printf("post not primary\n");
-                connect_primary(); //synchonized with the primary
+                strcpy(messageTosend,"syn");
+                sendMessage(server_socks[0],"syn");
+                memcpy(&logs,receiveMessage(server_socks[0]),sizeof(receiveMessage(server_socks[0])));
                 post(time_index++,title,content); //update locally
                 broadcast(); //get every server synchronized
             }
@@ -345,7 +389,7 @@ void local_write(char* type,char* title,char* content){
                 reply(time_index++,title,content);
             }
             else{
-                connect_primary(); //synchonized with the primary
+                sendMessage(server_socks[0],"syn"); //synchonized with the primary
                 reply(time_index++,title,content); //update locally
                 broadcast(); //get every server synchronized
             }
@@ -391,9 +435,11 @@ int main(int argc, char *argv[]){
         is_primary=true;
     }
     // is_primary = strcmp(argv[1],"primary")==0;
-    int client_sock,client_socket,primary_socket;
+    while(1){
+        int client_sock,client_socket,primary_socket;
     socklen_t size_primary,size_client;
     pthread_t client_thread;
+    pthread_t primary_thread[server_num-1];
     char option[15]; //input for choice of strategy
     struct arg_struct *args=malloc(sizeof(struct arg_struct));
     struct sockaddr clientName={};
@@ -413,13 +459,17 @@ int main(int argc, char *argv[]){
     printf("before primary\n");
     if(is_primary){
         for (int i=0;i<server_num;i++){ // need connect to each server to get them sychronized
-        server_sock = createServerSock(1);
+        server_sock = createServerSock(0);
         server_socks[i]=server_sock;
+        if( pthread_create( &primary_thread[i], NULL, (void *)connect_primary ,server_socks[i]) < 0){
+                perror("could not create thread");
+                return 1;
+                }
         }
         printf("is primary sockets\n");
     }
     else{
-        server_sock = createServerSock(0);
+        server_sock = createServerSock(1);
         if(listen(server_sock,1) < 0) {
             perror("Could not listen for connections serversocket\n");
             exit(0);
@@ -433,29 +483,44 @@ int main(int argc, char *argv[]){
                 return 1;
     }
     
+    if(!is_primary){
+        // if( pthread_create( &primary_thread, NULL, (void *)connect_primary ,NULL) < 0){
+        //         perror("could not create thread");
+        //         return 1;
+        //         }
+        while(1){
+            if(is_primary){
+                break;
+            }
+        }
+
+    }
+    
+    
     
    
-    while(1){
-        printf("while 1 loop\n");
-        if(( client_socket = accept(client_sock, (struct sockaddr *)&clientName, (socklen_t*) &size_client))>0){
-            printf("A Client connected!\n");
-            args->arg1=&client_socket;  // save socket to the client socket list
-            printf("%d,%d\n",client_socket,*(args->arg1));
-            strcpy(args->arg2,option);
-            // printf("Main: recv %d bytes\n", read_size);
-            if( pthread_create( &client_thread, NULL, (void *)connection_handler, (void*) args) < 0){
-                perror("could not create thread");
-                return 1;
-            }
+    // while(1){
+    //     printf("while 1 loop\n");
+    //     if(( client_socket = accept(client_sock, (struct sockaddr *)&clientName, (socklen_t*) &size_client))>0){
+    //         printf("A Client connected!\n");
+    //         args->arg1=&client_socket;  // save socket to the client socket list
+    //         printf("%d,%d\n",client_socket,*(args->arg1));
+    //         strcpy(args->arg2,option);
+    //         // printf("Main: recv %d bytes\n", read_size);
+    //         if( pthread_create( &client_thread, NULL, (void *)connection_handler, (void*) args) < 0){
+    //             perror("could not create thread");
+    //             return 1;
+    //         }
             
-        }
-        while(!is_primary){
-            while(( primary_socket = accept(server_socks[0], (struct sockaddr *)&primaryName, (socklen_t*) &size_primary))>0){
-                printf("A primary connected!\n");
-            }
-        }sadghasgdjhashdg
-    }
+    //     }
+    //     while(!is_primary){
+    //         while(( primary_socket = accept(server_socks[0], (struct sockaddr *)&primaryName, (socklen_t*) &size_primary))>0){
+    //             printf("A primary connected!\n");
+    //         }
+    //     }
+    // }
     free(args);
+    }
 
 }
 
