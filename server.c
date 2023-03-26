@@ -31,13 +31,16 @@ int createServerSock(int send_side){
 
     /* Hardcoded IP and Port for every client*/
     servaddr.sin_family = AF_INET;
-    servaddr.sin_addr.s_addr = inet_addr("127.0.0.1");
+    // servaddr.sin_addr.s_addr = inet_addr("127.0.0.1");
+    servaddr.sin_addr.s_addr=htonl(INADDR_ANY);
     servaddr.sin_port=htons(5000); //5000 reserve for primary port
     
+    printf("%d\n",send_side);
 
     /* Bind the socket to a specific port or connect to the other server abd ready to send message*/
     if(send_side){
         printf("try to connect with primary \n");
+        servaddr.sin_addr.s_addr = inet_addr("127.0.0.1");
         if (connect(sockfd, (struct sockaddr *)&servaddr, sizeof(servaddr))!= 0) {
         printf("connection with the server failed...\n");
         exit(0);
@@ -46,6 +49,7 @@ int createServerSock(int send_side){
     }
     else{
         printf("try to bind primary sock\n");
+        servaddr.sin_addr.s_addr=htonl(INADDR_ANY);
         if (bind(sockfd, (const struct sockaddr *) &servaddr, sizeof(servaddr)) < 0) {
         printf("\nBind failed\n");
         return -1;
@@ -58,16 +62,16 @@ int createClientSock(char* name,int port){
     int sockfd;
     struct sockaddr_in cli_addr;
     struct hostent* host;
-    int yes=1;
+    // int yes=1;
 
     if ((sockfd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
         printf("\n Socket creation error \n");
         return -1;
     }
-    if (setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes)) == -1) {
-    perror("setsockopt");
-    exit(1);
-}
+//     if (setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes)) == -1) {
+//     perror("setsockopt");
+//     exit(1);
+// }
 
     memset(&cli_addr, '0', sizeof(cli_addr));
 
@@ -75,7 +79,7 @@ int createClientSock(char* name,int port){
       perror("Sender: Client-gethostbyname() error lol!");
       exit(1);
       }
-
+    printf("%d\n",port);
     /* Hardcoded IP and Port for every client*/
     cli_addr.sin_family = AF_INET;
     cli_addr.sin_port = htons(port);
@@ -90,9 +94,9 @@ int createClientSock(char* name,int port){
     return sockfd;
 }
 
-void *connection_handler(int client_sock){  //handler to deal with client request
+void *connection_handler(int* sock){  //handler to deal with client request
     printf("connect_handler\n");
-    int client_socket;
+    int client_socket,client_sock;
     socklen_t size_client;
     char option[15];
     struct sockaddr clientName={};
@@ -102,6 +106,7 @@ void *connection_handler(int client_sock){  //handler to deal with client reques
     char type[5],title[10],content[1024];
     char client_message[1050];
     memset(client_message, 0, 1024);
+    client_sock=*sock;
     if(( client_socket = accept(client_sock, (struct sockaddr *)&clientName, (socklen_t*) &size_client))>0){
             printf("A Client connected!\n");
             if((read_size = recv(client_socket, client_message, 1050,0)) > 0){   //break down the message into different parts
@@ -253,14 +258,13 @@ void reply (int timestamp, char* content, char* title){
 //     }
 // }
 
-void* receiveMessage(int* socket)
+void* receiveMessage(int socket,char* message)
 {
-    char message[1024];
     char* ptr=message;
     memset(message, 0, 1024);
     int num, read_size=0;
     while (1){
-        if (read_size=recv(*socket, ptr, 1024, 0) > 0){//primary send timestamp otherwise send logs[] or an array of timestamp?
+        if (read_size=recv(socket, ptr, 1024, 0) > 0){//primary send timestamp otherwise send logs[] or an array of timestamp?
             // if(sizeof(buffer)==sizeof(logs)){//already synchronized
             //     // is_primary=1;
             //     // send(*socket,"not_primary",strlen("not_primary"),0);//make primary not primary
@@ -282,8 +286,8 @@ void* receiveMessage(int* socket)
     }
 }
 
-int sendMessage(int* socket,void* message){
-    int written_num= write(*socket, message, strlen(message) + 1);
+int sendMessage(int socket,void* message){
+    int written_num= write(socket, message, strlen(message) + 1);
     if(written_num<0){
         perror("written failed\n");
         return 0;
@@ -292,30 +296,35 @@ int sendMessage(int* socket,void* message){
     
 }
 
-void connect_primary(int server_sock){//connect primary and synchronize logs
+void connect_primary(int* sock){//connect primary and synchronize logs
     struct sockaddr serverName;
     int server_socket,num_ack;
     socklen_t size;
-     char buffer[1024];
+    char buffer[1024];
+    server_socket =*sock;
     if((server_socket = accept(server_sock, (struct sockaddr *)&serverName, (socklen_t *)&size))>=0){
         printf("primary server connected");
     }
+    
 
     sendMessage(server_socket,logs);
 
     while(1){
         if(send_ready){
             sendMessage(server_socket,messageTosend);
+            send_ready=false;
             memset(messageTosend, 0, 1024);
         }
         if(receive_ready){
-            strcpy(buffer,receiveMessage(server_socket));
-            if(strcmp(buffer[0],"syn")==0){
+            receiveMessage(server_socket,buffer);
+            if(strcmp(buffer,"syn")==0){//get wrtie request then migrate primary and send all data
+                is_primary=false;
                 sendMessage(server_socket,logs);
             }
-            else if(strcpy(buffer[0],"ack")==0){
+            else if(strcpy(buffer,"ack")==0){//get ack and wait for all the server get synchronized
                 num_ack++;
             }
+            receive_ready=false;
             memset(buffer, 0, 1024);
         }
     }
@@ -325,7 +334,7 @@ void *broadcast_handler(struct broadcast_args* arguments){// not exiting until r
     int socket = *(arguments->arg1);
     char message[1024];
     strcpy(message,arguments->arg2);
-    sendMessage(&socket,&logs);
+    sendMessage(socket,&logs);
     char buffer[1024];
     memset(buffer, 0, 1024);
     if(send(socket,message,1024, 0)<0){
@@ -378,10 +387,10 @@ void local_write(char* type,char* title,char* content){
             else{
                 printf("post not primary\n");
                 strcpy(messageTosend,"syn");
-                sendMessage(server_socks[0],"syn");
-                memcpy(&logs,receiveMessage(server_socks[0]),sizeof(receiveMessage(server_socks[0])));
+                send_ready=true;
+                receive_ready=true;
                 post(time_index++,title,content); //update locally
-                broadcast(); //get every server synchronized
+                is_primary=true;
             }
         }
         else if(strcmp("Reply",type)==0){
@@ -451,7 +460,7 @@ int main(int argc, char *argv[]){
     }
     strcpy(option,argv[2]);
     printf("before create all the sockets\n");
-    client_sock = createClientSock("csel-kh1250-10",atoi(argv[3]));
+    client_sock = createClientSock("localhost",atoi(argv[3]));
     if(listen(client_sock,1) < 0){ //listen for the client 
         perror("Could not listen for connections client\n");
         exit(0);
@@ -461,7 +470,7 @@ int main(int argc, char *argv[]){
         for (int i=0;i<server_num;i++){ // need connect to each server to get them sychronized
         server_sock = createServerSock(0);
         server_socks[i]=server_sock;
-        if( pthread_create( &primary_thread[i], NULL, (void *)connect_primary ,server_socks[i]) < 0){
+        if( pthread_create( &primary_thread[i], NULL, (void *)connect_primary ,(int*) &server_sock) < 0){
                 perror("could not create thread");
                 return 1;
                 }
@@ -478,7 +487,7 @@ int main(int argc, char *argv[]){
         printf("not primary sockets\n");
     }
 
-    if( pthread_create( &client_thread, NULL, (void *)connection_handler, (int) client_sock) < 0){
+    if( pthread_create( &client_thread, NULL, (void *)connection_handler, (int*) &client_sock) < 0){
                 perror("could not create thread");
                 return 1;
     }
@@ -495,6 +504,14 @@ int main(int argc, char *argv[]){
         }
 
     }
+    else{
+        while(1){
+            if(!is_primary){
+                break;
+            }
+        }
+    }
+
     
     
     
