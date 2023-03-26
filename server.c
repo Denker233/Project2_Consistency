@@ -94,6 +94,9 @@ int createClientSock(char* name,int port){
         printf("connect failed in client sock bind\n");
         return -1;
     }
+    else{
+        printf("client socket bind success\n");
+    }
     return sockfd;
 }
 
@@ -109,8 +112,8 @@ void *connection_handler(int* sock){  //handler to deal with client request
     char type[5],title[10],content[1024];
     char client_message[1050];
     memset(client_message, 0, 1024);
-    client_sock=*sock;
-    if(( client_socket = accept(client_sock, (struct sockaddr *)&clientName, (socklen_t*) &size_client))>0){
+    printf("before accept in connection handler\n");
+    if(( client_socket = accept(*sock, (struct sockaddr *)&clientName, (socklen_t*) &size_client))>0){
             printf("A Client connected!\n");
             if((read_size = recv(client_socket, client_message, 1050,0)) > 0){   //break down the message into different parts
                 printf("in while loop\n");
@@ -140,7 +143,7 @@ void *connection_handler(int* sock){  //handler to deal with client request
             
     }
     else{
-        perror("accept error in connect client accept\n");
+        printf("accept error in connect client accept\n");
     }
     
 }
@@ -468,7 +471,7 @@ int main(int argc, char *argv[]){
         perror("Could not listen for connections client\n");
         exit(0);
     }
-    printf("before primary\n");
+    printf("before primary, client listen success\n");
     if(is_primary){//receive side
         server_sock = createServerSock(0);
         if(listen(server_sock,server_num-1) < 0){ //listen for the client 
