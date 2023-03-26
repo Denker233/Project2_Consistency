@@ -19,7 +19,7 @@ int createServerSock(int send_side){
     int sockfd;
     struct sockaddr_in servaddr;
 
-
+    printf("inside create serversock \n");
     if ((sockfd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
         printf("\n Socket creation error \n");
         return -1;
@@ -30,17 +30,20 @@ int createServerSock(int send_side){
     /* Hardcoded IP and Port for every client*/
     servaddr.sin_family = AF_INET;
     servaddr.sin_addr.s_addr = inet_addr("127.0.0.1");
-    servaddr.sin_port=0;
+    servaddr.sin_port=htons(5000); //5000 reserve for primary port
     
 
     /* Bind the socket to a specific port or connect to the other server abd ready to send message*/
     if(send_side){
+        printf("try to connect with primary \n");
         if (connect(sockfd, (struct sockaddr *)&servaddr, sizeof(servaddr))!= 0) {
         printf("connection with the server failed...\n");
         exit(0);
     }
+    printf("connect with primary success\n");
     }
     else{
+        printf("try to bind primary sock\n");
         if (bind(sockfd, (const struct sockaddr *) &servaddr, sizeof(servaddr)) < 0) {
         printf("\nBind failed\n");
         return -1;
@@ -49,7 +52,7 @@ int createServerSock(int send_side){
     return sockfd;
 }
 
-int createClientSock(char* name){
+int createClientSock(char* name,int port){
     int sockfd;
     struct sockaddr_in cli_addr;
     struct hostent* host;
@@ -73,7 +76,7 @@ int createClientSock(char* name){
 
     /* Hardcoded IP and Port for every client*/
     cli_addr.sin_family = AF_INET;
-    cli_addr.sin_port = htons(3000);
+    cli_addr.sin_port = htons(port);
     cli_addr.sin_addr = *((struct in_addr *)host->h_addr); // or any address
     
 
@@ -102,7 +105,7 @@ void *connection_handler(struct arg_struct *args){  //handler to deal with clien
         printf("in while loop\n");
         printf("Client socket: %d\n", client_socket);
         printf("Client message: %s\n", client_message);
-        printf("Client[%d]: %s", client_socket, client_message);
+        printf("Client[%d]: %s\n", client_socket, client_message);
         char* token = strtok(client_message,":");
         strcpy(type,token);
         token = strtok(NULL,":");
@@ -118,6 +121,7 @@ void *connection_handler(struct arg_struct *args){  //handler to deal with clien
             exit(0);
         }
         else if(strcmp(option,"local_write")==0){
+            printf("before local\n");
             local_write(type,title,content);
         }
         client_message[read_size] = '\0';
@@ -255,7 +259,7 @@ int sendMessage(int* socket,void* message){
 
 void connect_primary(){//connect primary and synchronize logs
     struct sockaddr serverName;
-    int server_socket;
+    int server_socket=server_socks[0];
     socklen_t size;
     while((server_socket = accept(server_sock, (struct sockaddr *)&serverName, (socklen_t *)&size))){
         printf("primary server connected");
@@ -311,11 +315,13 @@ int broadcast(){
 
 void local_write(char* type,char* title,char* content){
     int number;
+    printf("in local write\n");
         if(strcmp("Post",type)==0){
             if(is_primary){
                 post(time_index++,title,content);
             }
             else{
+                printf("post not primary\n");
                 connect_primary(); //synchonized with the primary
                 post(time_index++,title,content); //update locally
                 broadcast(); //get every server synchronized
@@ -359,21 +365,34 @@ void local_write(char* type,char* title,char* content){
 
 int main(int argc, char *argv[]){
     printf("begin of main\n");
-    int client_sock,client_socket;
-    socklen_t size;
+    char state[20];
+    if (argc >= 2) {
+        strcpy(state,argv[1]);
+        printf("You entered: %s\n", state);
+    } else {
+        printf("Please enter a command line argument.\n");
+    }
+    strcpy(state,argv[1]);
+    printf("after str\n");
+    if(strcmp(state,"primary")==0){
+        is_primary=true;
+    }
+    // is_primary = strcmp(argv[1],"primary")==0;
+    int client_sock,client_socket,primary_socket;
+    socklen_t size_primary,size_client;
     pthread_t client_thread;
     char option[15]; //input for choice of strategy
     struct arg_struct *args=malloc(sizeof(struct arg_struct));
     struct sockaddr clientName={};
+    struct sockaddr primaryName={};
     for(int l=0;l<10;l++){ //set up reply_indexes
         for(int n=0;n<20;n++){
             logs[l].reply_indexes[n]=0;
             }
     }
-    printf("before create all the sockets\n");
-    printf("before create all the sockets\n");
-    client_sock = createClientSock("csel-kh1250-10");
     strcpy(option,argv[2]);
+    printf("before create all the sockets\n");
+    client_sock = createClientSock("csel-kh1250-10",atoi(argv[3]));
     if(listen(client_sock,1) < 0){ //listen for the client 
         perror("Could not listen for connections client\n");
         exit(0);
@@ -399,7 +418,7 @@ int main(int argc, char *argv[]){
    
     while(1){
         printf("while 1 loop\n");
-        while(( client_socket = accept(client_sock, (struct sockaddr *)&clientName, (socklen_t*) &size))>0){
+        while(( client_socket = accept(client_sock, (struct sockaddr *)&clientName, (socklen_t*) &size_client))>0){
             printf("A Client connected!\n");
             args->arg1=&client_socket;  // save socket to the client socket list
             printf("%d,%d\n",client_socket,*(args->arg1));
@@ -410,6 +429,11 @@ int main(int argc, char *argv[]){
                 return 1;
             }
             
+        }
+        while(!is_primary){
+            while(( primary_socket = accept(server_socks[0], (struct sockaddr *)&primaryName, (socklen_t*) &size_primary))>0){
+
+            }
         }
     }
     free(args);
