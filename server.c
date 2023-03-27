@@ -17,6 +17,7 @@ int num_ack = 0;
 
 
 void local_write(char* type,char* title,char* content);
+void quorum(char *type, char *title, char *content, int N, int NR, int NW);
 int createServerSock(int send_side){
     int sockfd;
     struct sockaddr_in servaddr;
@@ -94,6 +95,9 @@ int createClientSock(char* name,int port){
         printf("connect failed in client sock bind\n");
         return -1;
     }
+    else{
+        printf("client socket bind success\n");
+    }
     return sockfd;
 }
 
@@ -109,8 +113,8 @@ void *connection_handler(int* sock){  //handler to deal with client request
     char type[5],title[10],content[1024];
     char client_message[1050];
     memset(client_message, 0, 1024);
-    client_sock=*sock;
-    if(( client_socket = accept(client_sock, (struct sockaddr *)&clientName, (socklen_t*) &size_client))>0){
+    printf("before accept in connection handler\n");
+    if(( client_socket = accept(*sock, (struct sockaddr *)&clientName, (socklen_t*) &size_client))>0){
             printf("A Client connected!\n");
             if((read_size = recv(client_socket, client_message, 1050,0)) > 0){   //break down the message into different parts
                 printf("in while loop\n");
@@ -128,7 +132,7 @@ void *connection_handler(int* sock){  //handler to deal with client request
                     exit(0);
                 }
                 else if(strcmp(option,"quorum")==0){
-                    // quorum(type,title,content);
+                    quorum(type,title,content, 5, 5, 5);
                     exit(0);
                 }
                 else if(strcmp(option,"local_write")==0){
@@ -140,7 +144,7 @@ void *connection_handler(int* sock){  //handler to deal with client request
             
     }
     else{
-        perror("accept error in connect client accept\n");
+        printf("accept error in connect client accept\n");
     }
     
 }
@@ -432,6 +436,71 @@ void local_write(char* type,char* title,char* content){
 
 }
 
+void broadcast_to_quorum(int count) {
+    int successful_broadcasts = 0;
+    for (int i = 0; i < server_num - 1 && successful_broadcasts < count; i++) {
+        int socket = createServerSock(1);
+        struct broadcast_args *args = (struct broadcast_args *)malloc(sizeof(struct broadcast_args));
+        args->arg1 = &socket;
+        memcpy(&(args->arg2), &logs, sizeof(logs));
+
+        pthread_t broadcast_thread;
+        if (pthread_create(&broadcast_thread, NULL, (void *)broadcast_handler, (void *)args) < 0) {
+            perror("Could not create thread");
+        } else {
+            successful_broadcasts++;
+        }
+    }
+}
+
+void quorum(char *type, char *title, char *content, int N, int NR, int NW) {
+    if (strcmp("Post", type) == 0 || strcmp("Reply", type) == 0) {
+        if (NW > N / 2) {
+            if (is_primary) {
+                if (strcmp("Post", type) == 0) {
+                    post(time_index++, title, content);
+                } else if (strcmp("Reply", type) == 0) {
+                    reply(time_index++, title, content);
+                }
+                // Broadcast to at least NW - 1 other servers
+                broadcast_to_quorum(NW - 1);
+            } else {
+                printf("Not primary, cannot execute write operation\n");
+            }
+        } else {
+            printf("Write quorum not met (NW > N/2), operation cannot be executed\n");
+        }
+    } else if (strcmp("Choose", type) == 0 || strcmp("Read", type) == 0) {
+        if (NR + NW > N) {
+            if (is_primary) {
+                if (strcmp("Choose", type) == 0) {
+                    choose(title);
+                } else {
+                    int number;
+                    scanf("%d", &number);
+                    read_list(number);
+                }
+            } else {
+                sleep(2); // Wait for possible propagation from primary
+                if (strcmp
+   ("Choose", type) == 0) {
+                    choose(title);
+                } else {
+                    int number;
+                    scanf("%d", &number);
+                    read_list(number);
+                }
+            }
+        } else {
+            printf("Quorum not met (NR + NW > N), operation cannot be executed\n");
+        }
+    } else {
+        printf("Invalid operation type\n");
+    }
+}
+
+
+
 int main(int argc, char *argv[]){
     printf("begin of main\n");
     char state[20];
@@ -468,7 +537,7 @@ int main(int argc, char *argv[]){
         perror("Could not listen for connections client\n");
         exit(0);
     }
-    printf("before primary\n");
+    printf("before primary, client listen success\n");
     if(is_primary){//receive side
         server_sock = createServerSock(0);
         if(listen(server_sock,server_num-1) < 0){ //listen for the client 
