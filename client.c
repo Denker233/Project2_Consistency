@@ -83,16 +83,16 @@ void send_request(struct hostent* host, int server_port, char* message) {
 int main(int argc, char** argv) { // ip port key value
     // read the server IP address and port number from the command-line arguments
     struct hostent* host;
-    if ((host = gethostbyname("csel-kh1250-10")) == NULL) { //get host name for client
+    if ((host = gethostbyname("localhost")) == NULL) { //get host name for client
       perror("client host error");
       exit(1);
     }
-    int server_port = atoi(argv[2]);
+    int server_port = atoi(argv[1]);
 
     // read the key and value from the command-line arguments
-    char* type = argv[3];
-    char* title = argv[4];
-    char* content = argv[5];
+    char* type = argv[2];
+    char* title = argv[3];
+    char* content = argv[4];
 
     // send a PUT request to the specified server
     char message[MAX_MESSAGE_LENGTH];
